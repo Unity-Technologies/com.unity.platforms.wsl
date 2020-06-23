@@ -1,0 +1,15 @@
+{
+  "name": "com.unity.platforms.wsl",
+  "displayName": "Unity WSL Interface",
+  "version": "0.1.0-preview.1",
+  "unity": "2020.1",
+  "unityRelease": "0b12",
+  "dependencies": {
+  },
+  "description": "WSL2 Package for interfacing with WSL from the editor",
+  "keywords": [
+    "WSL",
+    "Linux",
+    "unity"
+  ]
+}
