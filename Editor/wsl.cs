@@ -8,6 +8,7 @@ using static Microsoft.Win32.RegistryKey;
 using System.Diagnostics;
 using System.Linq;
 using System.Collections.Generic;
+using System.Management;
 
 public class UnityWslWindow : EditorWindow
 {
@@ -27,6 +28,11 @@ public class UnityWslWindow : EditorWindow
         if (!WSLTools.IsWSLEnabled())
         {
             EditorUtility.DisplayDialog(ModuleName, "WSL is not enabled in your Windows 10.", "OK");
+            return;
+        }
+        if (!WSLTools.IsVMPEnabled())
+        {
+            EditorUtility.DisplayDialog(ModuleName, "VirtualMachinePlatform is not enabled in your Windows 10. You need Virtual Machine Platform to use WSL2.", "OK");
             return;
         }
         UnityEditor.EditorWindow window = GetWindow(typeof(UnityWslWindow));
@@ -355,9 +361,25 @@ public class WSLTools
         try
         {
             WSLExec _wslexec = new WSLExec();
-            var output = _wslexec.CallProc("wsl", $"--help", Encoding.UTF8);
+            var output = _wslexec.CallProc("wsl", $"--help", Encoding.Unicode);
 
             return output != null && output.Contains("https://aka.ms/wslinstall") == false;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    public static bool IsVMPEnabled()
+    {
+        try
+        {
+            WSLExec _wslexec = new WSLExec();
+            string output = _wslexec.CallProc("powershell.exe", "-NoProfile -NonInteractive -Command \"Write-Output (Get-WmiObject -query \\\"select InstallState from Win32_OptionalFeature where name = 'VirtualMachinePlatform'\\\").InstallState\"", Encoding.ASCII);
+            output = output.TrimEnd(new char[] { '\r', '\n' });
+            UnityEngine.Debug.Log(output);
+            return output.Contains("1");
         }
         catch (System.ComponentModel.Win32Exception)
         {
