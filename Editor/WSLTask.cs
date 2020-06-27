@@ -413,11 +413,8 @@ namespace Unity
 
             protected override string WSLCommand() => "-l -v";
 
-            public override async Task<int> ExecuteAsync()
+            private void ParseResult(int r)
             {
-                int r = await base.ExecuteAsync();
-
-                // we should parse the version here ? 
                 if (r == 0) {
                     string[] lines = Result.Output.Split(
                         new[] { "\r\n", "\r", "\n" },
@@ -439,6 +436,22 @@ namespace Unity
                         _distros.Add(new WSLDistro(distroInofo[0]));
                     }
                 }
+            }
+
+            public override int Execute(int timeout)
+            {
+                int r = base.Execute(timeout);
+
+                ParseResult(r);
+                return r;
+            }
+
+            public override async Task<int> ExecuteAsync()
+            {
+                int r = await base.ExecuteAsync();
+
+                // we should parse the version here ? 
+                ParseResult(r);
 
                 return r;
             }

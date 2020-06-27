@@ -67,10 +67,10 @@ namespace Unity
             }
 
 
-            private async Task GetDistros()
+            private void GetDistros()
             {
                 var distros = new WSLGetDistrosTask();
-                _ = await distros.ExecuteAsync();
+                distros.Execute(5000);
                 _distros.Clear();
                 _distros.AddRange(distros._distros);
             }
@@ -103,7 +103,7 @@ namespace Unity
             {
                 if (GUILayout.Button("Get Distros")) {
                     EditorUtility.DisplayProgressBar("WSL Query", "Getting WSL Distros", 0f);
-                    _ = GetDistros();
+                    GetDistros();
 
                     EditorUtility.ClearProgressBar();
                 }
