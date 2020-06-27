@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
-using Microsoft.Win32.SafeHandles;
+using UnityEngine;
 
 namespace Unity
 {
@@ -37,7 +35,8 @@ namespace Unity
             }
 
             public string Command { get; }
-            public abstract Task<int> ExecuteFluentAsync(int parentResult);
+            public abstract Task<int> ExecuteAsync();
+            public abstract int Execute(int timeout);
         }
 
         public class OSProcessTask : CommonTask
@@ -47,6 +46,8 @@ namespace Unity
             protected bool UseShellExecute = false;
             protected bool RedirectOuput = true;
             protected bool CreateNoWindow = true;
+            protected Encoding OutputEncoding = Encoding.Unicode;
+
 
             public async Task<ProcessResult> ExecuteShellCommand(string command, string arguments, int timeout)
             {
@@ -59,13 +60,12 @@ namespace Unity
                     process.StartInfo.FileName = command;
                     process.StartInfo.Arguments = arguments;
                     process.StartInfo.UseShellExecute = UseShellExecute;
-                    process.StartInfo.RedirectStandardInput = RedirectOuput;
                     process.StartInfo.RedirectStandardOutput = RedirectOuput;
                     process.StartInfo.RedirectStandardError = RedirectOuput;
                     process.StartInfo.CreateNoWindow = CreateNoWindow;
 
                     if (RedirectOuput)
-                        process.StartInfo.StandardOutputEncoding = Encoding.Unicode;
+                        process.StartInfo.StandardOutputEncoding = OutputEncoding;
 
                     var outputBuilder = new StringBuilder();
                     var outputCloseEvent = new TaskCompletionSource<bool>();
@@ -150,6 +150,56 @@ namespace Unity
                 return result;
             }
 
+            public override int Execute(int timeout)
+            {
+                var result = new ProcessResult();
+                using (var process = new Process()) {
+                    process.StartInfo.FileName = Command;
+                    process.StartInfo.Arguments = ConstructArguments();
+                    process.StartInfo.UseShellExecute = UseShellExecute;
+                    process.StartInfo.RedirectStandardOutput = RedirectOuput;
+                    process.StartInfo.RedirectStandardError = RedirectOuput;
+                    process.StartInfo.CreateNoWindow = CreateNoWindow;
+
+
+                    if (RedirectOuput)
+                        process.StartInfo.StandardOutputEncoding = OutputEncoding;
+
+
+                    bool isStarted;
+
+                    try {
+                        isStarted = process.Start();
+                    }
+                    catch (Exception error) {
+                        // Usually it occurs when an executable file is not found or is not executable
+
+                        result.Completed = true;
+                        result.ExitCode = -1;
+                        result.Output = error.Message;
+
+                        isStarted = false;
+                    }
+
+                    process.WaitForExit(timeout);
+
+                    result.Completed = true;
+                    result.ExitCode = process.ExitCode;
+
+                    // Adds process output if it was completed with error
+                    if (process.ExitCode != 0) {
+                        result.Output = $"{process.StandardOutput.ReadToEnd()}{process.StandardError.ReadToEnd()}";
+                    }
+                    else {
+                        result.Output = $"{process.StandardOutput.ReadToEnd()}";
+                    }
+                }
+
+                Result = result;
+
+                return Result.ExitCode;
+            }
+
             private static Task<bool> WaitForExitAsync(Process process, int timeout)
             {
                 return Task.Run(() => process.WaitForExit(timeout));
@@ -162,13 +212,56 @@ namespace Unity
                 return "";
             }
 
-            public override async Task<int> ExecuteFluentAsync(int parentResult)
+            public override async Task<int> ExecuteAsync()
             {
-                Result = await ExecuteShellCommand(Command, ConstructArguments(), 100000);
+                Result = await ExecuteShellCommand(Command, ConstructArguments(), 1000);
                 return Result.ExitCode;
             }
 
             public static OSProcessTask Create(string command) => new OSProcessTask(command);
+        }
+
+        public class PSWExecTask : OSProcessTask
+        {
+            public PSWExecTask() : base("powershell.exe")
+            {
+                UseShellExecute = false;
+                RedirectOuput = true;
+                CreateNoWindow = true;
+                OutputEncoding = Encoding.ASCII;
+            }
+
+            protected override string ConstructArguments()
+            {
+                return $"-NoProfile -NonInteractive -Command {PWSCommand()}";
+            }
+
+            protected virtual string PWSCommand()
+            {
+                return "";
+            }
+        }
+
+        public class IsVMPEnabledTask : PSWExecTask
+        {
+            protected override string PWSCommand()
+            {
+                return "\"Write-Output (Get-WmiObject -query \\\"select InstallState from Win32_OptionalFeature where name = 'VirtualMachinePlatform'\\\").InstallState\"";
+            }
+
+            public bool IsEnabled()
+            {
+                if (string.IsNullOrEmpty(Result.Output))
+                    return false;
+
+                try {
+                    return int.Parse(Result.Output.Trim('\r', '\n')) == 1;
+                }
+                catch (Exception) {
+                    return false;
+                }
+
+            }
         }
 
         public class WSLExecTask : OSProcessTask
@@ -196,6 +289,29 @@ namespace Unity
             }
         }
 
+        public class WSLEnabledTask : WSLExecTask
+        {
+            public bool IsEnabled { get; private set; }
+
+            public WSLEnabledTask()
+            {
+                UseShellExecute = false;
+                RedirectOuput = true;
+                //CreateNoWindow = true;
+            }
+
+            protected override string WSLCommand() => $"--help";
+
+            public override int Execute(int timeout)
+            {
+                var b = base.Execute(timeout);
+
+                IsEnabled = !string.IsNullOrEmpty(Result.Output) && !Result.Output.Contains("https://aka.ms/wslinstall");
+
+                return b;
+            }
+        }
+
         public class WSLRMDirTask : WSLExecTask
         {
             public string DirToRemove;
@@ -209,12 +325,12 @@ namespace Unity
 
             protected override string WSLCommand() => $"rm -rf {DirToRemove}";
 
-            public override async Task<int> ExecuteFluentAsync(int parentResult)
+            public override async Task<int> ExecuteAsync()
             {
                 if (string.IsNullOrEmpty(DirToRemove))
                     return -1;
 
-                return await base.ExecuteFluentAsync(parentResult);
+                return await base.ExecuteAsync();
             }
         }
 
@@ -231,12 +347,12 @@ namespace Unity
 
             protected override string WSLCommand() => $"mkdir {DirToCreate}";
 
-            public override async Task<int> ExecuteFluentAsync(int parentResult)
+            public override async Task<int> ExecuteAsync()
             {
                 if (string.IsNullOrEmpty(DirToCreate))
                     return -1;
 
-                return await base.ExecuteFluentAsync(parentResult);
+                return await base.ExecuteAsync();
             }
         }
 
@@ -253,12 +369,12 @@ namespace Unity
 
             protected override string WSLCommand() => $"chmod +x {ExecToSet}";
 
-            public override async Task<int> ExecuteFluentAsync(int parentResult)
+            public override async Task<int> ExecuteAsync()
             {
                 if (string.IsNullOrEmpty(ExecToSet))
                     return -1;
 
-                return await base.ExecuteFluentAsync(parentResult);
+                return await base.ExecuteAsync();
             }
         }
 
@@ -273,12 +389,12 @@ namespace Unity
 
             protected override string WSLCommand() => $"{ExecToLaunch}";
 
-            public override async Task<int> ExecuteFluentAsync(int parentResult)
+            public override async Task<int> ExecuteAsync()
             {
                 if (string.IsNullOrEmpty(ExecToLaunch))
                     return -1;
 
-                return await base.ExecuteFluentAsync(parentResult);
+                return await base.ExecuteAsync();
             }
         }
 
@@ -297,9 +413,9 @@ namespace Unity
 
             protected override string WSLCommand() => "-l -v";
 
-            public override async Task<int> ExecuteFluentAsync(int parentResult)
+            public override async Task<int> ExecuteAsync()
             {
-                int r = await base.ExecuteFluentAsync(parentResult);
+                int r = await base.ExecuteAsync();
 
                 // we should parse the version here ? 
                 if (r == 0) {

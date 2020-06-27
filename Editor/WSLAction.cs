@@ -60,13 +60,17 @@ namespace Unity
             public static void Launch()
             {
                 WSLTestWindow window = GetWindow<WSLTestWindow>();
+
+
+
                 window.Show();
             }
+
 
             private async Task GetDistros()
             {
                 var distros = new WSLGetDistrosTask();
-                _ = await distros.ExecuteFluentAsync(0);
+                _ = await distros.ExecuteAsync();
                 _distros.Clear();
                 _distros.AddRange(distros._distros);
             }
@@ -74,13 +78,13 @@ namespace Unity
             private async Task MakeTempDir(string dir)
             {
                 var selectedDistro = _distros[_choiceIndex];
-                await new WSLMkDirDirTask() { Distro = selectedDistro.Name, DirToCreate = $"/tmp/{dir}" }.ExecuteFluentAsync(0);            
+                await new WSLMkDirDirTask() { Distro = selectedDistro.Name, DirToCreate = $"/tmp/{dir}" }.ExecuteAsync();            
             }
 
             private async Task CleanupTempDir(string dir)
             {
                 var selectedDistro = _distros[_choiceIndex];
-                _ = await new WSLRMDirTask() { Distro = selectedDistro.Name, DirToRemove = $"/tmp/{dir}" }.ExecuteFluentAsync(0);
+                _ = await new WSLRMDirTask() { Distro = selectedDistro.Name, DirToRemove = $"/tmp/{dir}" }.ExecuteAsync();
             }
 
             private void CopyFileToWSLFolder(string source, string dest)
@@ -91,8 +95,8 @@ namespace Unity
             private async Task RunServer()
             {
                 var selectedDistro = _distros[_choiceIndex];
-                await new WSLSetExecTask() { Distro = selectedDistro.Name, ExecToSet = $"/tmp/{Path.GetFileNameWithoutExtension(exeName)}/{exeName}" }.ExecuteFluentAsync(0);
-                await new WSLLaunchExecTask() { Distro = selectedDistro.Name, ExecToLaunch = $"/tmp/{Path.GetFileNameWithoutExtension(exeName)}/{exeName}" }.ExecuteFluentAsync(0);
+                await new WSLSetExecTask() { Distro = selectedDistro.Name, ExecToSet = $"/tmp/{Path.GetFileNameWithoutExtension(exeName)}/{exeName}" }.ExecuteAsync();
+                await new WSLLaunchExecTask() { Distro = selectedDistro.Name, ExecToLaunch = $"/tmp/{Path.GetFileNameWithoutExtension(exeName)}/{exeName}" }.ExecuteAsync();
             }
 
             protected virtual void OnGUI()
